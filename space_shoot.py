@@ -21,10 +21,12 @@ class Fire:
         self.dir_ = np.array(direction)
         self.pos_ = np.array(pos)
         self.remove_ = False
+        self.size = 2
     def update(self):
         self.pos_ = self.pos_ + self.dir_ * 5
         if self.pos_[0] < 0 or self.pos_[0] > kWidth or self.pos_[1] < 0 or self.pos_[1] > kHeight:
             self.remove_ = True
+        pg.draw.circle(screen, pg.Color(0,255,0), (self.pos_ - self.size/2).astype(int), 2)
 
 class Player:
     kLeft = 0
@@ -48,6 +50,7 @@ class Player:
         self.explosion = 0
         self.state = kStateInvin
         self.state_count = 100
+        self.size = kShipSize
         image = pg.image.load(sprite).convert_alpha();
         self.icon = self.player = pg.transform.scale(image, (kShipSize,kShipSize))
 
@@ -127,7 +130,6 @@ class Player:
 
         for f in self.fires:
             f.update()
-            pg.draw.circle(screen, pg.Color(0,255,0), (int(f.pos_[0]-1), int(f.pos_[1]-1)), 2)
 
         self.fires = [f for f in self.fires if not f.remove_]
 
@@ -141,6 +143,16 @@ class Player:
                     print('Hit at ', location, ' ', f.pos_)
                     other.state = kStateHit
 
+    def Collide(self, other):
+        if self.state != kStateOk:
+            return
+
+        location = other.pos_
+        distance = np.linalg.norm(location - self.pos_)
+        if distance < (other.size + self.size)/2:
+            self.state = kStateHit
+            other.state = kStateHit
+
 class Alien:
     def __init__(self):
         region = int(random.random() * 4)
@@ -152,22 +164,23 @@ class Alien:
         self.phase = 0
         self.remove_ = False
         self.state = kStateOk
+        self.size = kShipSize
         angle = 0
         if region >= 2:
             if region == 0:
-                self.pos_[0] = -kShipSize
+                self.pos_[0] = -self.size
                 self.dir_[0] = random.random()
             else:
-                self.pos_[0] = kWidth+kShipSize
+                self.pos_[0] = kWidth+self.size
                 self.dir_[0] = -random.random()
             self.pos_[1]= int(random.random() * kHeight)
             self.dir_[1]= random.random()*2 - 1.
         else:
             if region == 2:
-                self.pos_[1]= -kShipSize
+                self.pos_[1]= -self.size
                 self.dir_[1]= random.random()
             else:
-                self.pos_[1]= kHeight+kShipSize
+                self.pos_[1]= kHeight+self.size
                 self.dir_[1]= -random.random()
             self.pos_[0] = int(random.random() * kWidth)
             self.dir_[0] = random.random()*2 - 1.
@@ -183,7 +196,7 @@ class Alien:
     def update(self):
         if self.state == kStateOk:
             self.pos_ = self.pos_ + self.dir_ * self.speed
-            screen.blit(Alien.alien_sprite[self.index][self.phase], self.pos_ + (-kShipSize/2,-kShipSize/2))
+            screen.blit(Alien.alien_sprite[self.index][self.phase], self.pos_ + (-self.size/2,-self.size/2))
             if (self.count%self.count_div) == 0:
                 self.phase = 1 - self.phase
         elif self.state == kStateHit:
@@ -196,7 +209,7 @@ class Alien:
                 self.remove_ = True
 
         self.count = self.count + 1
-        if self.pos_[0] < -kShipSize or self.pos_[1] < -kShipSize or self.pos_[0] > kWidth+kShipSize or self.pos_[1] > kHeight+kShipSize:
+        if self.pos_[0] < -self.size or self.pos_[1] < -self.size or self.pos_[0] > kWidth+self.size or self.pos_[1] > kHeight+self.size:
             self.remove_ = True
 
 
@@ -227,6 +240,9 @@ for i in range(0,4):
     for j in range(0,2):
         alien_sprite[i].append(pg.transform.scale(sprite_surface.subsurface(pg.Rect(109 + j*18, 37 + i*18, 16, 16)), (kShipSize,kShipSize)))
 
+
+#fire1_sprite = pg.transform.scale(sprite_surface.subsurface(pg.Rect(308, 136, 16, 16), (kShipSize, kShipSize))
+#fire2_sprite = pg.transform.scale(sprite_surface.subsurface(pg.Rect(308, 136-18, 16, 16), (kShipSize, kShipSize))
 Player.explosion_sprite = explosion
 Alien.alien_sprite = alien_sprite
 Alien.explosion_sprite = alien_explosion
@@ -251,6 +267,8 @@ while running:
     player2.Update()
     player1.Hit(player2)
     player2.Hit(player1)
+    player1.Collide(player2)
+    player2.Collide(player1)
 
     if (count%60) == 0:
         alien = Alien()
@@ -260,6 +278,8 @@ while running:
     for a in aliens:
         player1.Hit(a)
         player2.Hit(a)
+        player1.Collide(a)
+        player2.Collide(a)
         a.update()
     aliens = [a for a in aliens if not a.remove_]
 
