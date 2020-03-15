@@ -2,31 +2,205 @@
 
 import pygame as pg
 import numpy as np
-import math
 import time
 import random
 
 kWidth = 640
 kHeight = 480
 kShipSize = 32
+kExplosionSize = int(kShipSize * 1.5)
+kEnemyShootSpeed = 5
+kPlayerShootSpeed = 10
+kLives = 5
+
+kBossWidth = 200
+
 kStateOk = 1
 kStateHit = 2
 kStateExplode = 3
 kStateInvin = 4
-kExplosionSize = int(kShipSize * 1.5)
+
+kTypePlayer = 1
+kTypeEnemy = 2
+
+kFireFromEnemy = 100
+
+kBossLife = 100
+
 screen = []
 
 class Fire:
-    def __init__(self, direction, pos):
+    fires = []
+    def __init__(self, direction, pos, fire_type):
         self.dir_ = np.array(direction)
         self.pos_ = np.array(pos)
         self.remove_ = False
         self.size = 2
-    def update(self):
-        self.pos_ = self.pos_ + self.dir_ * 5
+        if fire_type == kFireFromEnemy:
+            self.speed = kEnemyShootSpeed
+        else:
+            self.speed = kPlayerShootSpeed
+        self.fire_type = fire_type
+        Fire.fires.append(self)
+
+    def Update(self):
+        self.pos_ = self.pos_ + self.dir_ * self.speed
         if self.pos_[0] < 0 or self.pos_[0] > kWidth or self.pos_[1] < 0 or self.pos_[1] > kHeight:
             self.remove_ = True
-        pg.draw.circle(screen, pg.Color(0,255,0), (self.pos_ - self.size/2).astype(int), 2)
+
+        if self.fire_type == kFireFromEnemy:
+            pg.draw.circle(screen, pg.Color(255,0,0), (self.pos_ - self.size/2).astype(int), 2)
+        else:
+            pg.draw.circle(screen, pg.Color(0,255,0), (self.pos_ - self.size/2).astype(int), 2)
+
+    @staticmethod
+    def UpdateAll():
+        for f in Fire.fires:
+           f.Update()
+        Fire.fires = [f for f in Fire.fires if not f.remove_]
+
+    @staticmethod
+    def Hit(other):
+        location = other.pos_
+        for f in Fire.fires:
+            if f.fire_type != kFireFromEnemy and other.type == kTypePlayer:
+                continue
+            if f.fire_type == kFireFromEnemy and other.type == kTypeEnemy:
+                continue
+
+            if other.Contain(f.pos_, 1):
+                f.remove_ = True
+                if other.state == kStateOk:
+                    print('Hit at ', location, ' ', f.pos_)
+                    other.state = kStateHit
+                    if f.fire_type != kFireFromEnemy:
+                        Player.player_ids[f.fire_type].score = Player.player_ids[f.fire_type].score + 1
+
+class Boss:
+    def __init__(self, pos, sprite):
+        image = pg.image.load(sprite).convert_alpha()
+        self.pos_ = np.array(pos)
+        self.width = image.get_width()
+        self.height = image.get_height()
+        ratio = kBossWidth / self.width
+        self.width = int(self.width * ratio)
+        self.height = int(self.height * ratio)
+        self.icon = pg.transform.scale(image, (self.width, self.height))
+        print(self.width)
+        print(self.height)
+        print(self.pos_ + (-self.width/2,-self.height/2))
+
+        self.nudge_counter = 50
+        self.acc_count = 0
+        self.cur_pos = self.pos_
+        self.cur_vel = np.array((0,0))
+        self.cur_acc = np.array((0,0))
+        self.impulse = np.array((0,0))
+
+        self.remove_ = False
+        self.type = kTypeEnemy
+        self.state = kStateOk
+        self.life = kBossLife
+
+    def Update(self):
+        if self.nudge_counter == 0:
+            self.impulse[0] = random.random() * 5.5
+            self.impulse[1] = random.random() * 5.5
+            self.nudge_counter = 50
+        if (self.nudge_counter % 3) == 0 and self.state == kStateOk:
+            angle = random.random() * 2. * np.pi
+            fire_dir = (np.cos(angle), np.sin(angle))
+            Fire(fire_dir, self.pos_, kFireFromEnemy)
+
+        if self.state == kStateHit:
+            self.life = self.life - 1
+            self.state = kStateOk
+
+        if self.life <= 0:
+            self.state = kStateExplode
+
+        dt = 0.03
+        kp = 0.3
+        kAlpha = 0.99
+        self.cur_acc = self.impulse + kp *(self.pos_ - self.cur_pos)
+        self.cur_vel = self.cur_vel + self.cur_acc * dt
+        self.cur_pos = self.cur_pos + self.cur_vel * dt
+        self.impulse = self.impulse * kAlpha
+        self.nudge_counter = self.nudge_counter - 1
+
+        if self.state != kStateExplode:
+            screen.blit(self.icon, self.cur_pos + (-self.width/2,-self.height/2))
+
+        pg.draw.rect(screen, (255,0,0), (20, 30, 600, 20))
+        pg.draw.rect(screen, (0,255,0), (20, 30, 600*self.life/kBossLife, 20))
+
+#        px = self.cur_pos[0] + 30
+#        py = self.cur_pos[1]
+#        for i in range(0,21):
+#            x = self.cur_pos[0] + int(30 * np.cos(np.pi*2/20*i))
+#            y = self.cur_pos[1] + int(130 * np.sin(np.pi*2/20*i))
+#            pg.draw.line(screen, (0,0,255), (x,y), (px,py), 1)
+#            px = x
+#            py = y
+#
+#        px = self.cur_pos[0] + 30
+#        py = self.cur_pos[1]
+#        for i in range(0,21):
+#            x = self.cur_pos[0] - 40 + int(30 * np.cos(np.pi*2/20*i))
+#            y = self.cur_pos[1] - 20 + int(80 * np.sin(np.pi*2/20*i))
+#            pg.draw.line(screen, (0,0,255), (x,y), (px,py), 1)
+#            px = x
+#            py = y
+#
+#        px = self.cur_pos[0] + 30
+#        py = self.cur_pos[1]
+#        for i in range(0,21):
+#            x = self.cur_pos[0] + 30 + int(30 * np.cos(np.pi*2/20*i))
+#            y = self.cur_pos[1] + 50 + int(80 * np.sin(np.pi*2/20*i))
+#            pg.draw.line(screen, (0,0,255), (x,y), (px,py), 1)
+#            px = x
+#            py = y
+#
+#        px = self.cur_pos[0] + 25
+#        py = self.cur_pos[1]
+#        for i in range(0,21):
+#            x = self.cur_pos[0] - 10 + int(25 * np.cos(np.pi*2/20*i))
+#            y = self.cur_pos[1] - 120 + int(25 * np.sin(np.pi*2/20*i))
+#            pg.draw.line(screen, (0,0,255), (x,y), (px,py), 1)
+#            px = x
+#            py = y
+#
+
+    def Contain(self, pos, radius):
+        a = 30 + radius
+        b = 130 + radius
+        x = pos[0] - self.cur_pos[0]
+        y = pos[1] - self.cur_pos[1]
+        if b*b*x*x + a*a*y*y <= a*a*b*b:
+            return True
+
+        a = 30 + radius
+        b = 80 + radius
+        x = pos[0] - self.cur_pos[0] + 40
+        y = pos[1] - self.cur_pos[1] + 20
+        if b*b*x*x + a*a*y*y <= a*a*b*b:
+            return True
+
+        a = 30 + radius
+        b = 80 + radius
+        x = pos[0] - self.cur_pos[0] - 30
+        y = pos[1] - self.cur_pos[1] - 50
+        if b*b*x*x + a*a*y*y <= a*a*b*b:
+           return True
+
+        a = 25 + radius
+        b = 25 + radius
+        x = pos[0] - self.cur_pos[0] + 10
+        y = pos[1] - self.cur_pos[1] + 120
+        if b*b*x*x + a*a*y*y <= a*a*b*b:
+            return True
+
+        return False
 
 class Player:
     kLeft = 0
@@ -37,12 +211,13 @@ class Player:
     kMove = np.array(((-1,0), (1,0), (0,-1), (0,1)))
     kDir = {(1,0,0,0):90, (0,1,0,0):270, (0,0,1,0):  0, (0,0,0,1):180,
             (1,0,1,0):45, (1,0,0,1):135, (0,1,1,0):315, (0,1,0,1):215}
+    player_ids = []
 
     def __init__(self, pos, sprite):
         self.pos_ = np.array(pos)
+        self.player_id = len(Player.player_ids)
         self.keys = [False] * 4
         self.fire = False;
-        self.fires = []
         self.angle = 0
         self.dir_ = np.array((0,-1))
         self.speed = 0
@@ -51,12 +226,22 @@ class Player:
         self.state = kStateInvin
         self.state_count = 100
         self.size = kShipSize
-        image = pg.image.load(sprite).convert_alpha();
+        self.info = (0,0);
+        image = pg.image.load(sprite).convert_alpha()
         self.icon = self.player = pg.transform.scale(image, (kShipSize,kShipSize))
+        self.score = 0
+        self.font = pg.font.SysFont('comicsans', 30)
+        self.lives = kLives
+        self.life = pg.transform.scale(image, (int(kShipSize/2),int(kShipSize/2)))
+        self.type = kTypePlayer
+        Player.player_ids.append(self)
 
     def SetMap(self, keymap, firekey):
         self.keymap = keymap
         self.firekey = firekey
+
+    def SetInfoLocation(self, location):
+        self.info = location
 
     def CheckEvent(self, event):
         if self.explosion > 0:
@@ -83,13 +268,12 @@ class Player:
             if new_angle != self.angle:
                 self.angle = new_angle
                 self.icon = pg.transform.rotate(self.player, self.angle)
-                self.dir_ = np.array((-math.sin(float(self.angle)*math.pi/180.), -math.cos(float(self.angle)*math.pi/180.)))
+                self.dir_ = np.array((-np.sin(float(self.angle)*np.pi/180.), -np.cos(float(self.angle)*np.pi/180.)))
             self.speed = 2.0
         else:
             self.speed = 0.
 
     def Update(self):
-
         if self.state == kStateOk or self.state == kStateInvin:
             self.pos_ = self.pos_ + self.dir_ * self.speed
 
@@ -108,14 +292,21 @@ class Player:
 
             if self.fire:
                 fire_dir = self.dir_
-                f = Fire(fire_dir, self.pos_)
-                self.fires.append(f)
+                Fire(fire_dir, self.pos_, self.player_id)
                 self.fire = False
         else:
             screen.blit(Player.explosion_sprite[int(self.state_count/5)%4], self.pos_ + (-kExplosionSize/2,-kExplosionSize/2))
 
+        text = self.font.render('Score: ' + str(self.score), 1, (255,255,255))
+        screen.blit(text, self.info)
+        xpos = self.info[0] + text.get_width() + 10
+        for i in range(0,self.lives-1):
+            screen.blit(self.life, (xpos, self.info[1]))
+            xpos = xpos + self.life.get_width() + 10
+
         self.state_count = self.state_count - 1;
         if (self.state == kStateHit):
+            self.lives = self.lives - 1
             self.state = kStateExplode
             self.state_count = 100
             self.moving = False
@@ -128,30 +319,22 @@ class Player:
                 self.state = kStateOk
             self.state_count = 100
 
-        for f in self.fires:
-            f.update()
 
-        self.fires = [f for f in self.fires if not f.remove_]
-
-    def Hit(self, other):
-        location = other.pos_
-        for f in self.fires:
-            distance = np.linalg.norm(location - f.pos_)
-            if (distance < 10):
-                f.remove_ = True
-                if other.state == kStateOk:
-                    print('Hit at ', location, ' ', f.pos_)
-                    other.state = kStateHit
 
     def Collide(self, other):
-        if self.state != kStateOk:
+        if self.state != kStateOk or other.state != kStateOk:
             return
 
-        location = other.pos_
-        distance = np.linalg.norm(location - self.pos_)
-        if distance < (other.size + self.size)/2:
+        if other.Contain(self.pos_, self.size/2):
             self.state = kStateHit
             other.state = kStateHit
+
+    def Contain(self, pos, radius):
+        distance = np.linalg.norm(self.pos_ - pos)
+        if (distance < 10 + radius):
+            return True
+        else:
+            return False
 
 class Alien:
     def __init__(self):
@@ -165,25 +348,28 @@ class Alien:
         self.remove_ = False
         self.state = kStateOk
         self.size = kShipSize
-        angle = 0
+        self.lives = 1;
+        self.type = kTypeEnemy
+        angle_from = 0.
         if region >= 2:
             if region == 0:
                 self.pos_[0] = -self.size
-                self.dir_[0] = random.random()
+                angle_from = np.pi
             else:
                 self.pos_[0] = kWidth+self.size
-                self.dir_[0] = -random.random()
+                angle_from = 0.
             self.pos_[1]= int(random.random() * kHeight)
-            self.dir_[1]= random.random()*2 - 1.
         else:
             if region == 2:
                 self.pos_[1]= -self.size
-                self.dir_[1]= random.random()
+                angle_from = np.pi/2.
             else:
                 self.pos_[1]= kHeight+self.size
-                self.dir_[1]= -random.random()
+                angle_from = np.pi*3/2.
             self.pos_[0] = int(random.random() * kWidth)
-            self.dir_[0] = random.random()*2 - 1.
+
+        self.angle = angle_from + random.random() * np.pi
+        self.dir_ = np.array((-np.sin(self.angle), -np.cos(self.angle)))
 
         print('New alien at ', self.pos_, ' ', self.dir_, ' ', region)
         norm = np.linalg.norm(self.dir_)
@@ -193,10 +379,11 @@ class Alien:
             self.dir_ = np.array((1,0))
         self.speed = random.random() + 2.5
 
-    def update(self):
+    def Update(self):
         if self.state == kStateOk:
             self.pos_ = self.pos_ + self.dir_ * self.speed
-            screen.blit(Alien.alien_sprite[self.index][self.phase], self.pos_ + (-self.size/2,-self.size/2))
+            angle_idx = int(((int(self.angle * 180 / np.pi) + 360) % 360)/45)
+            screen.blit(Alien.alien_sprite[self.index][self.phase][angle_idx], self.pos_ + (-self.size/2,-self.size/2))
             if (self.count%self.count_div) == 0:
                 self.phase = 1 - self.phase
         elif self.state == kStateHit:
@@ -212,6 +399,13 @@ class Alien:
         if self.pos_[0] < -self.size or self.pos_[1] < -self.size or self.pos_[0] > kWidth+self.size or self.pos_[1] > kHeight+self.size:
             self.remove_ = True
 
+    def Contain(self, pos, radius):
+        distance = np.linalg.norm(self.pos_ - pos)
+        if (distance < 10 + radius):
+            return True
+        else:
+            return False
+
 
 
 
@@ -224,6 +418,10 @@ player1.SetMap({pg.K_a:Player.kLeft, pg.K_d:Player.kRight, pg.K_w:Player.kUp, pg
 player2 = Player((50., 50.), 'invader.png')
 player2.SetMap({pg.K_LEFT:Player.kLeft, pg.K_RIGHT:Player.kRight, pg.K_UP:Player.kUp, pg.K_DOWN:Player.kDown}, pg.K_RSHIFT)
 
+boss01 = Boss((320,240), 'boss01.png');
+
+player1.SetInfoLocation((10,0));
+player2.SetInfoLocation((330,0));
 
 # Load sprites
 sprite_surface = pg.image.load('sprite.png')
@@ -236,9 +434,11 @@ for i in range(0,5):
 
 alien_sprite = []
 for i in range(0,4):
-    alien_sprite.append([])
+    alien_sprite.append([[],[]])
     for j in range(0,2):
-        alien_sprite[i].append(pg.transform.scale(sprite_surface.subsurface(pg.Rect(109 + j*18, 37 + i*18, 16, 16)), (kShipSize,kShipSize)))
+        image = pg.transform.scale(sprite_surface.subsurface(pg.Rect(109 + j*18, 37 + i*18, 16, 16)), (kShipSize,kShipSize))
+        for k in range(0,8):
+            alien_sprite[i][j].append(pg.transform.rotate(image, k*45))
 
 
 #fire1_sprite = pg.transform.scale(sprite_surface.subsurface(pg.Rect(308, 136, 16, 16), (kShipSize, kShipSize))
@@ -251,12 +451,17 @@ running = True
 
 count = 0
 aliens = []
+
+aliens.append(boss01)
 while running:
     fire1 = False
     fire2 = False
 #    pg.draw.rect(screen, pg.Color(0,0,0), pg.Rect(pos1 - np.array([20.,20.]), (70,70)))
     screen.fill(pg.Color(0,0,0))
     count = count + 1
+
+    Fire.UpdateAll()
+
     for event in pg.event.get():
         if event.type == pg.QUIT:
             running = False
@@ -265,8 +470,8 @@ while running:
 
     player1.Update()
     player2.Update()
-    player1.Hit(player2)
-    player2.Hit(player1)
+    Fire.Hit(player2)
+    Fire.Hit(player1)
     player1.Collide(player2)
     player2.Collide(player1)
 
@@ -276,11 +481,10 @@ while running:
         print(len(aliens))
 
     for a in aliens:
-        player1.Hit(a)
-        player2.Hit(a)
+        Fire.Hit(a)
         player1.Collide(a)
         player2.Collide(a)
-        a.update()
+        a.Update()
     aliens = [a for a in aliens if not a.remove_]
 
     pg.display.flip()
